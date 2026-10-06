@@ -1,0 +1,4 @@
+# Falsos positivos da lista de nomes protegidos (nomes-protegidos.json).
+# Uma sequência por linha, exatamente como aparece no texto; não diferencia maiúsculas nem acentos.
+# Só acrescente aqui o que NÃO é nome real de cliente, parte ou pessoa do escritório,
+# ou o nome do próprio autor quando ele quiser assinar o projeto.

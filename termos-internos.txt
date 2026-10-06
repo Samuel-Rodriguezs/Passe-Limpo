@@ -1,0 +1,9 @@
+# Vocabulário interno: termos que revelam o jeito de trabalhar da empresa (nomes de campos,
+# planilhas, artefatos e jargão próprio). Um por linha; não diferencia maiúsculas nem acentos.
+# Bloqueado na versão pública como termo sensível (categoria "vocabulario_interno").
+# Evite palavras comuns da língua ou da área: dão alarme falso.
+#
+# Exemplos fictícios (troque pelos seus):
+PLANILHA MESTRA
+CAMPO STATUS INTERNO
+pasta_execucao_interna

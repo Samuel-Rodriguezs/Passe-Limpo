@@ -1,0 +1,11 @@
+# Termos que nunca podem aparecer na versão pública (um por linha, sem diferença de maiúsculas nem acentos).
+# Vocabulário de trabalho (nomes de campos, jargão interno) vai em termos-internos.txt.
+# O usuário do Windows e o nome do computador entram automaticamente.
+# Acrescente aqui nomes de clientes, partes, empresas, colegas, bases, workspaces e domínios internos.
+# Termos que valem só para um projeto: passe com --termo "Nome" na chamada do varrer.py.
+#
+# Exemplos fictícios (troque pelos seus):
+Empresa Exemplo Ltda
+exemplo-empresa.com.br
+Fulano Exemplar
+Construtora Ômega Exemplo
