@@ -98,6 +98,14 @@ Os testes criam projetos fictícios em pasta temporária e cobrem inventário, c
 - Sem login no `gh`, não é possível confirmar que um repositório é privado; nesse caso o push fica bloqueado.
 - A generalização de regras internas no README depende de leitura humana e do revisor independente.
 
+## Direitos autorais
+
+Copyright © 2026 Samuel Rodrigues. Todos os direitos reservados.
+
+O código e a documentação deste repositório são protegidos pela Lei nº 9.610/1998 (direitos autorais) e pela Lei nº 9.609/1998 (programa de computador). O uso, a cópia, a modificação ou a distribuição sem autorização prévia e por escrito do autor poderá ser objeto de notificação extrajudicial, de pedido de remoção junto ao GitHub (DMCA) e das medidas judiciais cabíveis.
+
+Para pedir autorização, entre em contato pelo perfil do autor no GitHub.
+
 ## Uso
 
 Este repositório é disponibilizado como portfólio e demonstração técnica.
