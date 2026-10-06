@@ -222,6 +222,18 @@ WORKING TREE: CLEAN/SUJO
 
 Tornar o repositório público é sempre do usuário (Settings → Danger Zone). Lembre-o de marcar em github.com/settings/emails "Keep my email addresses private" e "Block command line pushes that expose my email".
 
+## Cofre cifrado (listas de proteção)
+
+As listas reais (termos sensíveis, vocabulário interno, exceções) e a chave dos nomes protegidos ficam em `cofre.db`: SQLite com cada item cifrado em **AES-256-GCM** e a chave de dados protegida pelo **DPAPI** do Windows (só o mesmo usuário, na mesma máquina). Os `.txt` ficam só com comentários; o que for escrito neles continua valendo, mas em texto puro.
+
+- A varredura lê o cofre sozinha (`--cofre`, padrão `SKILL_DIR\cofre.db`).
+- **Nunca** liste, imprima ou copie para o chat o conteúdo do cofre. Os avisos da varredura mostram só a categoria e a linha (`[termo sensivel]`, `[termo interno]`, `[nome protegido]`, `[e-mail]`…): para corrigir, abra a linha no arquivo **do destino**.
+- Para o usuário ver/editar: `python "<SKILL_DIR>\scripts\app_cofre.py"` (ou `Abrir cofre.cmd`): itens mascarados, revelação de 10 s, fecha após 5 min parado.
+- Termo novo que o usuário aprovar: peça para ele incluir pelo app (você não grava valores sensíveis em arquivo).
+- Estado (só contagens): `python "<SKILL_DIR>\scripts\cofre.py" status`.
+- Backup para outra máquina: no app, aba **Backup** (senha do usuário, scrypt + AES-256-GCM). Você nunca digita, pede ou vê a senha.
+- Ao montar uma lista de nomes nova, use `nomes_protegidos.py montar ... --cofre "<SKILL_DIR>\cofre.db"` para a chave ir para o cofre e não para o arquivo.
+
 ## Atualizar a lista de nomes protegidos
 
 Só quando o usuário pedir (a base muda com o tempo). Leia **somente** os campos de nome da base de cadastro (por exemplo, pelo MCP do Airtable, com `fieldIds` restritos e `pageSize` grande, para o resultado ir para arquivo e **nunca** ser impresso):
@@ -231,7 +243,7 @@ Só quando o usuário pedir (a base muda com o tempo). Leia **somente** os campo
 Depois:
 
 ```
-python "<SKILL_DIR>\scripts\nomes_protegidos.py" montar --pessoas "<arq_pessoas>:YOUR_FIELD_ID" --empresas "<arq_empresas>:YOUR_FIELD_ID" --saida "<SKILL_DIR>\nomes-protegidos.json" --fonte "<origem>, <data>"
+python "<SKILL_DIR>\scripts\nomes_protegidos.py" montar --pessoas "<arq_pessoas>:YOUR_FIELD_ID" --empresas "<arq_empresas>:YOUR_FIELD_ID" --saida "<SKILL_DIR>\nomes-protegidos.json" --fonte "<origem>, <data>" --cofre "<SKILL_DIR>\cofre.db"
 ```
 
 Uma lista simples (um nome por linha) também serve: `--pessoas "nomes.txt:-"`. Confira detecção e alarme falso só com contagens (nunca liste nomes no chat), nunca grave nada na base, e apague os arquivos brutos exportados depois de montar a lista.

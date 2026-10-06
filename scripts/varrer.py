@@ -150,10 +150,23 @@ RE_PLACEHOLDER = re.compile(
     r"|getenv|process\.env|env\(|dummy|fake|ficticio|fictício|redacted)")
 
 
+ROTULO_OCULTO = {
+    "termo_sensivel": "[termo sensivel]",
+    "vocabulario_interno": "[termo interno]",
+    "parte_processual": "[nome de parte]",
+    "endereco": "[endereco]",
+    "email": "[e-mail]",
+    "nome_protegido": "[nome protegido]",
+}
+
+
 def mascarar(cat, valor):
+    """Nunca mostra pedaco de nome, termo, e-mail ou endereco; segredos so com inicio e fim."""
     v = valor.strip()
-    if cat in ("caminho_interno", "termo_sensivel", "parte_processual", "endereco"):
-        return (v[:3] + "..." + f"[{len(v)} chars]") if len(v) > 6 else "***"
+    if cat in ROTULO_OCULTO:
+        return ROTULO_OCULTO[cat]
+    if cat == "caminho_interno":
+        return f"[caminho local, {len(v)} caracteres]"
     if len(v) <= 8:
         return v[:1] + "*" * (len(v) - 1)
     return v[:4] + "*" * min(len(v) - 6, 20) + v[-2:]
@@ -250,7 +263,7 @@ def varrer_texto(texto, termos_re):
             termo, rx, cat = item if len(item) == 3 else (*item, "termo_sensivel")
             if rx.search(linha_sem_acento):
                 # vocabulario interno nao e dado pessoal: mostra o termo para facilitar a troca
-                trecho = termo if cat == "vocabulario_interno" else mascarar("termo_sensivel", termo)
+                trecho = mascarar(cat, termo)
                 achados.append({"linha": n, "categoria": cat, "trecho": trecho})
     return achados
 
@@ -268,20 +281,39 @@ def carregar_lista(arquivo):
 
 
 PASTA_SKILL = Path(__file__).resolve().parent.parent
+
+
+def dados_dir():
+    """Pasta das listas e do cofre. Nos testes (pytest) pode apontar para dados ficticios."""
+    if "PYTEST_CURRENT_TEST" in os.environ and os.environ.get("PUBLICAR_SKILL_DADOS"):
+        return Path(os.environ["PUBLICAR_SKILL_DADOS"])
+    return PASTA_SKILL
+
+
+def padrao(nome):
+    return dados_dir() / nome
+
+
 NOMES_PADRAO = PASTA_SKILL / "nomes-protegidos.json"
 PERMITIDOS_PADRAO = PASTA_SKILL / "nomes-permitidos.txt"
 
 
-def montar_termos(arquivo_sensiveis, extras, arquivo_internos, arquivo_nomes=None, arquivo_permitidos=None):
+def montar_termos(arquivo_sensiveis, extras, arquivo_internos, arquivo_nomes=None, arquivo_permitidos=None,
+                  arquivo_cofre=None):
     """Lista unica: (termo, regex, categoria) dos sensiveis + extras + automaticos e do vocabulario
-    interno, mais o detector de nomes protegidos (hash) quando o arquivo existe."""
-    sensiveis = termos_regex(carregar_termos(arquivo_sensiveis, extras))
-    internos = termos_regex(sorted(set(carregar_lista(arquivo_internos)), key=len, reverse=True), "vocabulario_interno")
-    lista = sensiveis + internos
+    interno (arquivos .txt + cofre cifrado), mais o detector de nomes protegidos (hash)."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from cofre import abrir_se_existir
+    cofre = abrir_se_existir(arquivo_cofre)
+    do_cofre = (lambda l: cofre.listar(l)) if cofre else (lambda l: [])
+    sens = sorted(set(carregar_termos(arquivo_sensiveis, extras)) | set(do_cofre("sensiveis")), key=len, reverse=True)
+    inter = sorted(set(carregar_lista(arquivo_internos)) | set(do_cofre("internos")), key=len, reverse=True)
+    lista = termos_regex(sens) + termos_regex(inter, "vocabulario_interno")
     if arquivo_nomes and Path(arquivo_nomes).is_file():
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
         from nomes_protegidos import NomesProtegidos
-        lista.append(NomesProtegidos(arquivo_nomes, arquivo_permitidos))
+        lista.append(NomesProtegidos(arquivo_nomes, arquivo_permitidos, cofre))
+    if cofre:
+        cofre.fechar()
     return lista
 
 
@@ -440,11 +472,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--origem", required=True)
     ap.add_argument("--saida", required=True)
-    ap.add_argument("--termos", default=str(Path(__file__).resolve().parent.parent / "termos-sensiveis.txt"))
+    ap.add_argument("--termos", default=str(padrao("termos-sensiveis.txt")))
+    ap.add_argument("--cofre", default=str(padrao("cofre.db")), help="cofre cifrado com as listas (cofre.py)")
     ap.add_argument("--termo", action="append", default=[], help="termo extra desta sessao (repetivel)")
-    ap.add_argument("--nomes", default=str(NOMES_PADRAO), help="lista de nomes protegidos (hash)")
-    ap.add_argument("--permitidos", default=str(PERMITIDOS_PADRAO), help="falsos positivos da lista de nomes")
-    ap.add_argument("--internos", default=str(Path(__file__).resolve().parent.parent / "termos-internos.txt"),
+    ap.add_argument("--nomes", default=str(padrao("nomes-protegidos.json")), help="lista de nomes protegidos (hash)")
+    ap.add_argument("--permitidos", default=str(padrao("nomes-permitidos.txt")), help="falsos positivos da lista de nomes")
+    ap.add_argument("--internos", default=str(padrao("termos-internos.txt")),
                     help="vocabulario interno da empresa (bloqueado como termo sensivel)")
     ap.add_argument("--verificar", action="store_true", help="modo verificacao final do destino")
     ap.add_argument("--aceitar", action="append", default=[],
@@ -465,7 +498,10 @@ def main():
         print("ERRO: --sinteticos so vale no modo --verificar (no inventario da origem nada e sintetico).")
         return 2
 
-    termos = montar_termos(a.termos, a.termo, a.internos, a.nomes, a.permitidos)
+    termos = montar_termos(a.termos, a.termo, a.internos, a.nomes, a.permitidos, a.cofre)
+    automaticos = set(carregar_termos(None, []))
+    if not any(isinstance(t, tuple) and t[2] == "termo_sensivel" and t[0] not in automaticos for t in termos):
+        print("AVISO: nenhum termo sensivel carregado (lista vazia e sem cofre); so os padroes automaticos valem.")
     if not Path(a.nomes).is_file():
         print(f"AVISO: lista de nomes protegidos ausente ({a.nomes}); nomes de clientes nao serao checados.")
     if not a.sem_ocr:
@@ -491,6 +527,7 @@ def main():
         "internos_arquivo": str(Path(a.internos).resolve()),
         "nomes_arquivo": str(Path(a.nomes).resolve()) if Path(a.nomes).is_file() else None,
         "permitidos_arquivo": str(Path(a.permitidos).resolve()),
+        "cofre_arquivo": str(Path(a.cofre).resolve()) if Path(a.cofre).is_file() else None,
         "aceitos": sorted(aceitos),
         "sinteticos": str(Path(a.sinteticos).resolve()) if a.sinteticos else None,
         "arquivos": arquivos,
@@ -524,9 +561,9 @@ def main():
                 for ach in it["achados"]:
                     c[ach["categoria"]] = c.get(ach["categoria"], 0) + 1
                 extra = f" ({it['total_achados']} achados: {', '.join(f'{k} {v}' for k, v in c.items())})"
-                vocab = sorted({ach["trecho"] for ach in it["achados"] if ach["categoria"] == "vocabulario_interno"})
-                if vocab:
-                    extra += f" [termos internos: {', '.join(vocab)}]"
+                linhas = sorted({ach["linha"] for ach in it["achados"]})[:15]
+                if linhas:
+                    extra += f" [linhas: {', '.join(map(str, linhas))}]"
             print(f"  - {it['caminho']}{extra}" + (f" :: {'; '.join(it['motivos'])}" if it["motivos"] else ""))
         if len(lista) > 80:
             print(f"  ... +{len(lista) - 80} (ver plano)")

@@ -29,3 +29,7 @@ cookies*
 .vscode/
 .idea/
 .claude/
+
+# Cofre real e backups (cifrados, mas sao de cada usuario)
+cofre.db
+*.cofre

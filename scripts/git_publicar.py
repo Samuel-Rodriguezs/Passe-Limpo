@@ -76,7 +76,7 @@ def email_valido(email):
 
 def termos_da_verificacao(verif):
     return varrer.montar_termos(verif.get("termos_arquivo"), verif.get("termos_extra", []), verif.get("internos_arquivo"),
-                                verif.get("nomes_arquivo"), verif.get("permitidos_arquivo"))
+                                verif.get("nomes_arquivo"), verif.get("permitidos_arquivo"), verif.get("cofre_arquivo"))
 
 
 def normalizar_url(url):

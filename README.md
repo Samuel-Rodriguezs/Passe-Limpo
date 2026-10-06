@@ -16,7 +16,8 @@ O fluxo automatiza a preparação e deixa uma única decisão humana: aprovar o 
 
 ## Tecnologias
 
-- Python 3.11+ (biblioteca padrão no núcleo)
+- Python 3.11+ (biblioteca padrão no núcleo: sqlite3, tkinter, hashlib, ctypes)
+- Windows CNG (AES-256-GCM) e DPAPI, via ctypes, sem dependências externas
 - Git e GitHub CLI (`gh`) para identidade, verificação do repositório e push
 - Tesseract OCR (opcional) e PyMuPDF (opcional) para ler texto em imagens
 - pytest para os testes
@@ -42,6 +43,8 @@ Principais garantias:
 - **Classificação conservadora:** `.env`, chaves, certificados, bancos locais, logs, PDFs e planilhas nunca entram; o que é duvidoso só entra com aprovação.
 - **Detecção ampla:** tokens e chaves de vários serviços, IDs privados, URLs internas, caminhos locais, dados pessoais brasileiros (CPF, CNPJ, número de processo, telefone, CEP, endereço, OAB), termos e vocabulário interno configuráveis, sem diferenciar maiúscula nem acento.
 - **Nomes protegidos por hash:** uma lista grande de nomes (clientes, partes, empresas) pode ser guardada só como HMAC; a varredura compara as sequências de palavras do texto sem que o arquivo revele os nomes.
+- **Cofre cifrado:** as listas reais (termos sensíveis, vocabulário interno, exceções) e a chave dos nomes protegidos ficam num SQLite com cada item cifrado em AES-256-GCM (Windows CNG) e chave de dados protegida pelo DPAPI do usuário; backup portátil com senha (scrypt + AES-256-GCM). Os avisos da varredura nunca mostram pedaço de nome ou termo, só a categoria e a linha.
+- **App local do cofre:** janela (Tkinter) para ver e editar as listas com itens mascarados, revelação temporária, teste de nome na lista protegida e bloqueio por inatividade.
 - **Imagens:** texto visível lido por OCR e metadados (EXIF, XMP, texto de PNG) detectados e removidos na cópia.
 - **Exemplos sintéticos:** arquivos gerados pela própria skill são reconhecidos por hash, mas continuam sendo varridos.
 - **Git:** histórico inteiro varrido (inclusive arquivos já apagados), identidade só no repositório com e-mail `noreply` do GitHub, commit apenas da lista verificada.
@@ -63,7 +66,10 @@ scripts/
   nomes_protegidos.py        monta e consulta a lista de nomes por hash
   midia.py                   OCR e metadados de imagens
   git_publicar.py            identidade, commit, resumo da pausa e push
+  cofre.py                   cofre cifrado: listas, segredos, migração e backup com senha
+  app_cofre.py               app local para ver e editar o cofre
 tests/                       testes com projetos fictícios em pasta temporária
+Abrir cofre.cmd              abre o app do cofre
 instalar.ps1                 instalador para Windows
 INSTALAR.md                  guia de instalação
 ```
@@ -88,6 +94,7 @@ Os testes criam projetos fictícios em pasta temporária e cobrem inventário, c
 
 - OCR não reconhece rosto, assinatura, logotipo nem letra manuscrita; por isso imagens sempre exigem aprovação.
 - Limpeza de metadados só para PNG e JPEG.
+- O cofre usa DPAPI: protege contra outros usuários e acesso ao disco fora do Windows, não contra programa malicioso rodando no mesmo usuário. O cofre só abre no Windows.
 - Sem login no `gh`, não é possível confirmar que um repositório é privado; nesse caso o push fica bloqueado.
 - A generalização de regras internas no README depende de leitura humana e do revisor independente.
 

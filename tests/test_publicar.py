@@ -10,6 +10,15 @@ import pytest
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import git_publicar  # noqa: E402
+import tempfile  # noqa: E402
+
+# Listas ficticias: os testes nunca leem as listas reais nem o cofre real da skill.
+DADOS = Path(tempfile.mkdtemp(prefix="publicar-dados-teste-"))
+(DADOS / "termos-sensiveis.txt").write_text(
+    "# ficticio\nEmpresa Exemplo Ltda\nexemplo-empresa.com.br\nFulano Exemplar\nConstrutora Ômega Exemplo\n", encoding="utf-8")
+(DADOS / "termos-internos.txt").write_text(
+    "# ficticio\nPLANILHA MESTRA\nCAMPO STATUS INTERNO\npasta_execucao_interna\n", encoding="utf-8")
+(DADOS / "nomes-permitidos.txt").write_text("# ficticio\n", encoding="utf-8")
 
 NOREPLY = "12345+exemplo-usuario@users.noreply.github.com"
 NOME = "Pessoa Exemplo"
@@ -41,6 +50,7 @@ CHAVE_FALSA = "-----BEGIN " + "PRIVATE KEY-----"
 def _ambiente_limpo(monkeypatch):
     for v in git_publicar.ENV_IDENTIDADE:
         monkeypatch.delenv(v, raising=False)
+    monkeypatch.setenv("PUBLICAR_SKILL_DADOS", str(DADOS))
 
 
 def rodar(script, *args, env=None):
@@ -364,7 +374,7 @@ def test_push_bloqueado_se_repo_publico_ou_nao_confirmado(cenario, monkeypatch):
 
 import varrer  # noqa: E402
 
-TERMOS = varrer.montar_termos(str(SCRIPTS.parent / "termos-sensiveis.txt"), [], str(SCRIPTS.parent / "termos-internos.txt"))
+TERMOS = varrer.montar_termos(str(DADOS / "termos-sensiveis.txt"), [], str(DADOS / "termos-internos.txt"))
 
 
 def _cats(texto):
@@ -377,9 +387,9 @@ def test_vocabulario_interno_no_codigo_bloqueia_a_verificacao(cenario):
     assert code == 1 and "vocabulario_interno" in out
 
 
-def test_vocabulario_interno_aparece_sem_mascara():
+def test_vocabulario_interno_nunca_aparece_no_aviso():
     achado = varrer.varrer_texto("campo PLANILHA MESTRA", TERMOS)
-    assert achado and achado[0]["categoria"] == "vocabulario_interno" and achado[0]["trecho"] == "PLANILHA MESTRA"
+    assert achado and achado[0]["categoria"] == "vocabulario_interno" and achado[0]["trecho"] == "[termo interno]"
 
 
 @pytest.mark.parametrize("texto", ["construtora omega exemplo", "CONSTRUTORA ÔMEGA EXEMPLO", "campo status interno"])
@@ -397,7 +407,7 @@ def test_lista_de_internos_customizada(cenario, tmp_path):
     lista.write_text("# comentario\nPlanilhaMestra\n", encoding="utf-8")
     escrever(cenario["destino"], {"util.py": "carrega a PlanilhaMestra\n"})
     code, out = verificar(cenario, "--internos", lista)
-    assert code == 1 and "PlanilhaMestra" in out
+    assert code == 1 and "vocabulario_interno" in out and "PlanilhaMestra" not in out
 
 
 def test_mensagem_de_commit_com_vocabulario_interno_e_recusada(cenario):
@@ -570,3 +580,126 @@ def test_pdf_continua_excluido_sempre(cenario):
     doc.save(str(cenario["destino"] / "manual.pdf"))
     code, out = verificar(cenario, "--aceitar", "manual.pdf")
     assert code == 1 and "EXCLUIR" in out
+
+
+# ------------------------------------------------------------ cofre cifrado (DPAPI + AES-256-GCM)
+
+import cofre  # noqa: E402
+
+
+@pytest.mark.parametrize("texto,cat", [
+    ("contato Fulano Exemplar", "termo_sensivel"),
+    ("Reclamante: " + "Joaquim Barbosa Pereirinha", "parte_processual"),
+    ("escreva para joaquim" + "@dominio-real.com.br", "email"),
+    ("Rua " + "Jacarandas Floridas, 123", "endereco"),
+])
+def test_avisos_nao_mostram_pedaco_de_nome(texto, cat):
+    achados = [a for a in varrer.varrer_texto(texto, TERMOS) if a["categoria"] == cat]
+    assert achados
+    for a in achados:
+        assert not any(p.lower() in a["trecho"].lower() for p in ("Ful", "Joa", "Bar", "Per", "Jac", "Flo", "joa", "dom"))
+
+
+def test_cripto_detecta_adulteracao():
+    k = os.urandom(32)
+    pacote = cofre.cifrar(k, b"dado ficticio", b"aad")
+    assert cofre.decifrar(k, pacote, b"aad") == b"dado ficticio"
+    with pytest.raises(cofre.ErroIntegridade):
+        cofre.decifrar(k, pacote[:-1] + bytes([pacote[-1] ^ 1]), b"aad")
+    with pytest.raises(cofre.ErroIntegridade):
+        cofre.decifrar(k, pacote, b"outro")
+    with pytest.raises(cofre.ErroIntegridade):
+        cofre.decifrar(os.urandom(32), pacote, b"aad")
+
+
+def test_cofre_nao_guarda_texto_puro_e_deduplica(tmp_path):
+    c = cofre.Cofre(tmp_path / "c.db")
+    assert c.adicionar("sensiveis", "Beltrana Ficticia")
+    assert not c.adicionar("sensiveis", "BELTRANA FICTÍCIA")
+    c.fechar()
+    bruto = (tmp_path / "c.db").read_bytes()
+    assert b"Beltrana" not in bruto and b"BELTRANA" not in bruto
+
+
+def test_migrar_move_listas_e_chave_e_varredura_continua_pegando(tmp_path, cenario):
+    pasta = tmp_path / "skill"
+    escrever(pasta, {"termos-sensiveis.txt": "# cab\nBeltrana Ficticia\n",
+                     "termos-internos.txt": "# cab\nRELATORIO SECRETO\n",
+                     "nomes-permitidos.txt": "# cab\n"})
+    fonte = tmp_path / "n.txt"
+    fonte.write_text("Cicrano Inventado Sobrenomeficticio\n", encoding="utf-8")
+    assert rodar("nomes_protegidos.py", "montar", "--pessoas", f"{fonte}:-", "--saida", pasta / "nomes-protegidos.json")[0] == 0
+    code, out = rodar("cofre.py", "migrar", "--pasta", pasta)
+    assert code == 0, out
+    assert "Beltrana" not in (pasta / "termos-sensiveis.txt").read_text(encoding="utf-8")
+    assert "RELATORIO" not in (pasta / "termos-internos.txt").read_text(encoding="utf-8")
+    assert "chave" not in json.loads((pasta / "nomes-protegidos.json").read_text(encoding="utf-8"))
+    escrever(cenario["destino"], {"util.py": "# Beltrana Ficticia pediu o RELATORIO SECRETO de Cicrano Sobrenomeficticio\n"})
+    args = ["--termos", pasta / "termos-sensiveis.txt", "--internos", pasta / "termos-internos.txt",
+            "--nomes", pasta / "nomes-protegidos.json", "--permitidos", pasta / "nomes-permitidos.txt",
+            "--cofre", pasta / "cofre.db"]
+    code, out = verificar(cenario, *args)
+    assert code == 1
+    for cat in ("termo_sensivel", "vocabulario_interno", "nome_protegido"):
+        assert cat in out, cat
+    for nome in ("Beltrana", "RELATORIO", "Cicrano"):
+        assert nome not in out
+
+
+def test_nomes_sem_chave_e_sem_cofre_nao_abre(tmp_path):
+    arq = tmp_path / "n.json"
+    arq.write_text(json.dumps({"hashes": [], "chave_no_cofre": True}), encoding="utf-8")
+    with pytest.raises(PermissionError):
+        nomes_protegidos.NomesProtegidos(arq)
+
+
+def test_backup_com_senha(tmp_path):
+    a = cofre.Cofre(tmp_path / "a.db")
+    a.adicionar("internos", "TERMO FICTICIO")
+    a.definir_segredo("chave_nomes", b"k" * 16)
+    with pytest.raises(ValueError):
+        a.exportar(tmp_path / "x.cofre", "curta")
+    a.exportar(tmp_path / "b.cofre", "senha-ficticia-longa")
+    a.fechar()
+    assert b"TERMO" not in (tmp_path / "b.cofre").read_bytes()
+    b = cofre.Cofre(tmp_path / "b.db")
+    with pytest.raises(cofre.ErroIntegridade):
+        b.importar(tmp_path / "b.cofre", "senha-errada-qualquer")
+    assert b.importar(tmp_path / "b.cofre", "senha-ficticia-longa")["internos"] == 1
+    assert b.listar("internos") == ["TERMO FICTICIO"] and b.segredo("chave_nomes") == b"k" * 16
+    b.fechar()
+
+
+def test_status_do_cofre_nao_mostra_valores(tmp_path):
+    c = cofre.Cofre(tmp_path / "c.db")
+    c.adicionar("sensiveis", "Beltrana Ficticia")
+    c.fechar()
+    code, out = rodar("cofre.py", "--cofre", tmp_path / "c.db", "status")
+    assert code == 0 and "sensiveis: 1" in out and "Beltrana" not in out
+
+
+# ------------------------------------------------------------ app local do cofre
+
+def test_app_mostra_tudo_mascarado_e_revela_so_um(tmp_path):
+    tk = pytest.importorskip("tkinter")
+    import app_cofre
+    c = cofre.Cofre(tmp_path / "c.db")
+    c.adicionar("sensiveis", "Beltrana Ficticia")
+    c.adicionar("internos", "RELATORIO SECRETO")
+    c.fechar()
+    try:
+        raiz = tk.Tk()
+    except tk.TclError:
+        pytest.skip("sem interface grafica")
+    raiz.withdraw()
+    app = app_cofre.App(raiz, tmp_path / "c.db", tmp_path / "nao-existe.json")
+    try:
+        todas = [app.listas[k].get(0, "end") for k in ("sensiveis", "internos")]
+        assert all("Beltrana" not in l and "RELATORIO" not in l for itens in todas for l in itens)
+        app.listas["sensiveis"].selection_set(0)
+        app.revelar("sensiveis")
+        assert app.listas["sensiveis"].get(0) == "Beltrana Ficticia"
+        app._mascarar_revelado()
+        assert "Beltrana" not in app.listas["sensiveis"].get(0)
+    finally:
+        app.fechar()

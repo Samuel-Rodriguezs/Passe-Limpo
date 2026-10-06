@@ -108,11 +108,19 @@ def ler_nomes(spec):
 class NomesProtegidos:
     """Usado pelo varrer.py: procura variantes protegidas nas sequências de palavras de uma linha."""
 
-    def __init__(self, arquivo, permitidos=None):
+    def __init__(self, arquivo, permitidos=None, cofre=None):
         dados = json.loads(Path(arquivo).read_text(encoding="utf-8"))
-        self.chave = dados["chave"]
+        if dados.get("chave"):
+            self.chave = dados["chave"]
+        elif cofre is not None and cofre.segredo("chave_nomes"):
+            self.chave = cofre.segredo("chave_nomes").hex()
+        else:
+            raise PermissionError("a chave dos nomes protegidos esta no cofre, e o cofre nao abriu")
         self.hashes = set(dados["hashes"])
         self.permitidos = set()
+        if cofre is not None:
+            for l in cofre.listar("permitidos"):
+                self.permitidos.add(" ".join(normalizar(l)))
         if permitidos and Path(permitidos).is_file():
             for l in Path(permitidos).read_text(encoding="utf-8").splitlines():
                 if l.strip() and not l.strip().startswith("#"):
@@ -142,6 +150,11 @@ class NomesProtegidos:
 def cmd_montar(a):
     saida = Path(a.saida)
     chave = secrets.token_hex(16)
+    cofre = None
+    if a.cofre:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from cofre import Cofre
+        cofre = Cofre(a.cofre)
     hashes, contagem = set(), {}
     for tipo, specs, gerar in (("pessoas", a.pessoas, variantes_pessoa), ("empresas", a.empresas, variantes_empresa)):
         nomes = set()
@@ -153,10 +166,15 @@ def cmd_montar(a):
             variantes |= gerar(n)
         hashes |= {assinar(chave, v) for v in variantes}
         contagem[tipo] = {"nomes": len(nomes), "variantes": len(variantes)}
-    saida.write_text(json.dumps({
-        "versao": 1, "gerado_em": time.strftime("%Y-%m-%d %H:%M:%S"), "fonte": a.fonte,
-        "contagem": contagem, "chave": chave, "hashes": sorted(hashes),
-    }, ensure_ascii=False, indent=0), encoding="utf-8")
+    dados = {"versao": 1, "gerado_em": time.strftime("%Y-%m-%d %H:%M:%S"), "fonte": a.fonte,
+             "contagem": contagem, "hashes": sorted(hashes)}
+    if cofre:
+        cofre.definir_segredo("chave_nomes", bytes.fromhex(chave))  # a chave nao fica no arquivo
+        dados["chave_no_cofre"] = True
+        cofre.fechar()
+    else:
+        dados["chave"] = chave
+    saida.write_text(json.dumps(dados, ensure_ascii=False, indent=0), encoding="utf-8")
     print(f"nomes protegidos -> {saida}")
     for tipo, c in contagem.items():
         print(f"  {tipo}: {c['nomes']} nomes, {c['variantes']} variantes")
@@ -172,6 +190,7 @@ def main():
     p.add_argument("--empresas", action="append", default=[])
     p.add_argument("--saida", required=True)
     p.add_argument("--fonte", default="")
+    p.add_argument("--cofre", help="grava a chave no cofre cifrado em vez de no arquivo (recomendado)")
     p.set_defaults(f=cmd_montar)
     a = ap.parse_args()
     return a.f(a)
