@@ -397,7 +397,7 @@ def test_termos_sem_acento_e_sem_maiuscula(texto):
     assert _cats(texto), texto
 
 
-@pytest.mark.parametrize("texto", ["fase processual", "acordo homologado", "valor homologado", "calculo_reclamante"])
+@pytest.mark.parametrize("texto", ["fase do projeto", "valor final aprovado", "status da entrega", "calculo_total"])
 def test_palavras_comuns_nao_sao_vocabulario_interno(texto):
     assert "vocabulario_interno" not in _cats(texto)
 
@@ -589,7 +589,7 @@ import cofre  # noqa: E402
 
 @pytest.mark.parametrize("texto,cat", [
     ("contato Fulano Exemplar", "termo_sensivel"),
-    ("Reclamante: " + "Joaquim Barbosa Pereirinha", "parte_processual"),
+    ("Cliente: " + "Joaquim Barbosa Pereirinha", "parte_processual"),
     ("escreva para joaquim" + "@dominio-real.com.br", "email"),
     ("Rua " + "Jacarandas Floridas, 123", "endereco"),
 ])

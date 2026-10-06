@@ -236,7 +236,7 @@ As listas reais (termos sensíveis, vocabulário interno, exceções) e a chave 
 
 ## Atualizar a lista de nomes protegidos
 
-Só quando o usuário pedir (a base muda com o tempo). Leia **somente** os campos de nome da base de cadastro (por exemplo, pelo MCP do Airtable, com `fieldIds` restritos e `pageSize` grande, para o resultado ir para arquivo e **nunca** ser impresso):
+Só quando o usuário pedir (a base muda com o tempo). Leia **somente** os campos de nome da base de cadastro (por exemplo, Airtable ou planilha exportada; peça só os campos de nome, e em leituras grandes deixe o resultado ir para arquivo, **nunca** impresso):
 - pessoas (clientes, partes, profissionais): tabela `YOUR_TABLE_ID`, campo `YOUR_FIELD_ID`;
 - empresas: tabela `YOUR_TABLE_ID`, campo `YOUR_FIELD_ID`.
 
